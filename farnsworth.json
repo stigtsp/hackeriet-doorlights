@@ -1,0 +1,17 @@
+{
+    "wifi": {
+        "ssid" : "hackeriet.no",
+        "psk"  : "hackeriet.no"
+    },
+    "mqtt": {
+        "server" : "matrix.hackeriet.no",
+        "topic"  : "hackeriet/ding",
+        "port"   : 8883,
+        "ssl"    : true,
+        "password"   : "",
+        "user"   : "farnsworth"
+    }
+
+
+}
+
