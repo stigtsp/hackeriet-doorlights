@@ -4,25 +4,20 @@ import time
 import machine
 import ubinascii
 import ujson
-
-
 import neopixel # for blinky flashy thingy
-
 from umqtt.simple import MQTTClient
 
 
-with open('farnsworth.json') as fp:
-    config = ujson.loads(fp.read())
-
-
-
+wdt = machine.WDT()
+CLIENT_ID = ubinascii.hexlify(machine.unique_id())
 np = neopixel.NeoPixel(machine.Pin(0), 50)
 
-default = []
-fade_i=0
+def np_write_wrapper():
+    wdt.feed()
+    np.write()
 
-#for i in range(np.n/2): default.append((0, 0, 0))
-#for i in range(np.n/2): default.append((0, 0, 0))
+default = []
+fade_i = 0
 
 for i in range(9): default.append((255, 0, 24))
 for i in range(8): default.append((255, 165, 44))
@@ -31,24 +26,19 @@ for i in range(8): default.append((0, 128, 24))
 for i in range(8): default.append((0, 0, 249))
 for i in range(9): default.append((134, 0, 125))
 
+def fail(e):
+    print(e)
+    print("** machine.reset() in 5 sec **")
+    time.sleep(5)
+    machine.reset()
+
+
 
 
 def standard(np):
     for i in range(np.n):
         np[i] = default[i]
-    np.write()
-
-
-standard(np)
-time.sleep(1)
-
-
-
-ap_if = network.WLAN(network.AP_IF)
-if ap_if.active():
-  ap_if.active(False)
-
-CLIENT_ID = ubinascii.hexlify(machine.unique_id())
+    np_write_wrapper()
 
 def apply_colors(m):
    for i in range(np.n):
@@ -58,7 +48,7 @@ def apply_colors(m):
            default[i]=t
        except IndexError:
            pass
-   np.write()
+   np_write_wrapper()
 
 
 def flash(c=(255,255,255),times=4):
@@ -66,7 +56,7 @@ def flash(c=(255,255,255),times=4):
       for j in range(np.n):
           np[j] = (0, 0, 0)
           np[i % np.n] = c
-      np.write()
+      np_write_wrapper()
   time.sleep_ms(10)
   apply_colors(default)
 
@@ -78,7 +68,7 @@ def bounce():
             np[i % np.n] = (0, 0, 0)
         else:
             np[np.n - 1 - (i % np.n)] = (0, 0, 0)
-        np.write()
+        np_write_wrapper()
         time.sleep_ms(60)
 
 def blink():
@@ -89,7 +79,7 @@ def blink():
         else:
             val = 255 - (i & 0xff)
         np[j] = (val, 0, 0)
-    np.write()
+    np_write_wrapper()
   apply_colors(default)
 
 def fade_one(i):
@@ -98,7 +88,7 @@ def fade_one(i):
         val = i
         d = default[j]
         np[j] = (int(d[0] * (val/255)), int(d[1] * (val/255)),  int(d[2] * (val/255)))
-        np.write()
+        np_write_wrapper()
 
 def on_receive(t, m):
     print("Onreceive")
@@ -109,16 +99,26 @@ def on_receive(t, m):
     flash(times=1)
     fade_going=True
 
+def main():
+    with open('farnsworth.json') as fp:
+        config = ujson.loads(fp.read())
 
-try:
+    standard(np)
+
+    ap_if = network.WLAN(network.AP_IF)
+    if ap_if.active():
+        ap_if.active(False)
+
     print("Station active")
     station = network.WLAN(network.STA_IF)
     station.active(True)
     station.connect(config['wifi']['ssid'],config['wifi']['psk'])
+
     while not station.isconnected():
         machine.idle()
 
     print("Connected wifi")
+
     while True:
         c = MQTTClient(client_id = CLIENT_ID,
                        server     = config['mqtt']['server'],
@@ -129,16 +129,17 @@ try:
         )
         c.set_callback(on_receive)
         print("Connecting to mqtt")
+        wdt.feed()
         c.connect()
+        wdt.feed()
         print("Subscribing to topic")
         c.subscribe(config['mqtt']['topic'])
         print("Entering wait_msg loop")
         while True:
-            c.wait_msg()
+            c.check_msg()
+            wdt.feed()
 
+try:
+    main()
 except Exception as e:
-    print(e)
-    time.sleep_ms(5000)
-    print("** machine.reset() in 5 sec **")
-    time.sleep(5)
-    machine.reset()
+    fail(e)
